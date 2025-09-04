@@ -1,6 +1,7 @@
 package com.example.nocamera
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
@@ -51,6 +52,7 @@ class MainActivity : ComponentActivity() {
     private var currentZoom = 1.0f
     private var maxZoom = 1.0f
     private var activeArraySize: AndroidRect? = null
+    private var currentCrop: AndroidRect? = null
 
     private lateinit var characteristics: CameraCharacteristics
     private var lastCaptureResult: CaptureResult? = null
@@ -58,6 +60,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var captureButton: Button
     private var zoomSeekBar: android.widget.SeekBar? = null
     private var zoomText: android.widget.TextView? = null
+    private var focusView: android.view.View? = null
 
     private fun takePicture() {
         if (cameraDevice == null || captureSession == null) return
@@ -69,6 +72,8 @@ class MainActivity : ComponentActivity() {
         try {
             val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
             captureRequestBuilder.addTarget(rawReader!!.surface)
+            // apply current crop region so RAW capture matches preview zoom
+            currentCrop?.let { captureRequestBuilder.set(CaptureRequest.SCALER_CROP_REGION, it) }
             captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
             captureSession!!.capture(captureRequestBuilder.build(),
                 object : CameraCaptureSession.CaptureCallback() {
@@ -165,6 +170,13 @@ class MainActivity : ComponentActivity() {
 
         zoomSeekBar = findViewById(R.id.zoomSeekBar)
         zoomText = findViewById(R.id.zoomText)
+        focusView = findViewById(R.id.focusView)
+        // style focusView: circular stroke
+        focusView?.background = android.graphics.drawable.ShapeDrawable(android.graphics.drawable.shapes.OvalShape()).apply {
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.strokeWidth = 6f
+            paint.color = android.graphics.Color.YELLOW
+        }
         zoomSeekBar?.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
@@ -245,6 +257,7 @@ class MainActivity : ComponentActivity() {
         openCamera(newCameraId)
     }
 
+    @SuppressLint("SuspiciousIndentation")
     private fun createCameraSession() {
         if (cameraDevice == null) return
 
@@ -345,6 +358,7 @@ class MainActivity : ComponentActivity() {
             val halfWidth = (rect.width() / (2 * zoomFactor)).toInt()
             val halfHeight = (rect.height() / (2 * zoomFactor)).toInt()
             val crop = AndroidRect(centerX - halfWidth, centerY - halfHeight, centerX + halfWidth, centerY + halfHeight)
+            currentCrop = crop
             previewRequestBuilder?.set(CaptureRequest.SCALER_CROP_REGION, crop)
             captureSession?.setRepeatingRequest(previewRequestBuilder!!.build(), null, null)
         } catch (e: Exception) {
@@ -360,17 +374,69 @@ class MainActivity : ComponentActivity() {
             val viewH = textureView.height
             val sensorX = (x.toFloat() / viewW * rect.width() + rect.left).toInt()
             val sensorY = (y.toFloat() / viewH * rect.height() + rect.top).toInt()
-            val half = 100
-            val meterRect = MeteringRectangle(Math.max(sensorX - half, rect.left), Math.max(sensorY - half, rect.top), half * 2, half * 2, MeteringRectangle.METERING_WEIGHT_MAX - 1)
+            val half = (Math.min(viewW, viewH) * 0.08).toInt().coerceAtLeast(50)
+            val left = (sensorX - half).coerceAtLeast(rect.left)
+            val top = (sensorY - half).coerceAtLeast(rect.top)
+            val right = (sensorX + half).coerceAtMost(rect.right)
+            val bottom = (sensorY + half).coerceAtMost(rect.bottom)
+            val meterRect = MeteringRectangle(left, top, right - left, bottom - top, MeteringRectangle.METERING_WEIGHT_MAX / 2)
 
-            previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(meterRect))
-            previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(meterRect))
+            val maxAf = characteristics.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AF) ?: 0
+            val maxAe = characteristics.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AE) ?: 0
+
+            // set regions if supported
+            if (maxAf > 0) previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(meterRect))
+            if (maxAe > 0) previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(meterRect))
+
+            // trigger AF
+            previewRequestBuilder?.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
             previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
             previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START)
-            captureSession?.capture(previewRequestBuilder!!.build(), object : CameraCaptureSession.CaptureCallback() {}, null)
-            // reset trigger
-            previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
-            captureSession?.setRepeatingRequest(previewRequestBuilder!!.build(), null, null)
+            captureSession?.capture(previewRequestBuilder!!.build(), object : CameraCaptureSession.CaptureCallback() {
+                override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+                    // after AF completes, reset to continuous AF for preview
+                    try {
+                        previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
+                        previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                        // clear regions after focusing to avoid permanent override
+                        if (maxAf > 0) previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_REGIONS, null)
+                        if (maxAe > 0) previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_REGIONS, null)
+                        session.setRepeatingRequest(previewRequestBuilder!!.build(), null, null)
+                        runOnUiThread { toast("Focus locked") }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }, null)
+            runOnUiThread {
+                toast("Focusing...")
+            }
+            // show focus indicator at tap (place relative to textureView)
+            runOnUiThread {
+                textureView.post {
+                    val texLoc = IntArray(2)
+                    textureView.getLocationOnScreen(texLoc)
+                    val parentView = textureView.parent as android.view.View
+                    val parentLoc = IntArray(2)
+                    parentView.getLocationOnScreen(parentLoc)
+                    val absoluteX = texLoc[0] + x
+                    val absoluteY = texLoc[1] + y
+                    val targetX = (absoluteX - parentLoc[0] - (focusView?.width ?: 0) / 2).toFloat()
+                    val targetY = (absoluteY - parentLoc[1] - (focusView?.height ?: 0) / 2).toFloat()
+                    focusView?.apply {
+                        bringToFront()
+                        this.x = targetX
+                        this.y = targetY
+                        visibility = android.view.View.VISIBLE
+                        alpha = 1f
+                        scaleX = 1f
+                        scaleY = 1f
+                        animate().scaleX(0.6f).scaleY(0.6f).alpha(0f).setDuration(800).withEndAction {
+                            visibility = android.view.View.GONE
+                        }.start()
+                    }
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -379,7 +445,6 @@ class MainActivity : ComponentActivity() {
     private fun saveDng(image: Image, result: CaptureResult) {
         try {
             val filename = "photo_${System.currentTimeMillis()}.dng"
-            // force orientation to 90 degrees (rotate right)
             val orientationDegrees = 90
             val values = android.content.ContentValues().apply {
                 put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
@@ -392,8 +457,34 @@ class MainActivity : ComponentActivity() {
             if (uri != null) {
                 resolver.openOutputStream(uri)?.use { out ->
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                        DngCreator(characteristics, result).use { creator ->
-                            creator.writeImage(out, image)
+                        val crop = currentCrop
+                        if (crop != null && (crop.width() < image.width || crop.height() < image.height)) {
+                            // Convert RAW to grayscale Bitmap, crop, and save as JPEG
+                            val plane = image.planes[0]
+                            val buffer = plane.buffer
+                            val width = image.width
+                            val height = image.height
+                            val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+                            // Fill bitmap with grayscale values from RAW buffer
+                            val rowStride = plane.rowStride
+                            val pixelStride = plane.pixelStride
+                            val rowBuffer = ByteArray(width * pixelStride)
+                            for (y in 0 until height) {
+                                val rowStart = y * rowStride
+                                buffer.position(rowStart)
+                                buffer.get(rowBuffer, 0, width * pixelStride)
+                                for (x in 0 until width) {
+                                    val v = rowBuffer[x * pixelStride].toInt() and 0xFF
+                                    bitmap.setPixel(x, y, android.graphics.Color.rgb(v, v, v))
+                                }
+                            }
+                            // Crop the bitmap
+                            val croppedBitmap = android.graphics.Bitmap.createBitmap(bitmap, crop.left, crop.top, crop.width(), crop.height())
+                            croppedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 98, out)
+                        } else {
+                            DngCreator(characteristics, result).use { creator ->
+                                creator.writeImage(out, image)
+                            }
                         }
                     }
                 }
