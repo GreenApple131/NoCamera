@@ -1,6 +1,7 @@
 package com.example.nocamera
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
@@ -51,6 +52,7 @@ class MainActivity : ComponentActivity() {
     private var currentZoom = 1.0f
     private var maxZoom = 1.0f
     private var activeArraySize: AndroidRect? = null
+    private var currentCrop: AndroidRect? = null
 
     private lateinit var characteristics: CameraCharacteristics
     private var lastCaptureResult: CaptureResult? = null
@@ -58,6 +60,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var captureButton: Button
     private var zoomSeekBar: android.widget.SeekBar? = null
     private var zoomText: android.widget.TextView? = null
+    private var focusView: android.view.View? = null
 
     private fun takePicture() {
         if (cameraDevice == null || captureSession == null) return
@@ -69,6 +72,8 @@ class MainActivity : ComponentActivity() {
         try {
             val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
             captureRequestBuilder.addTarget(rawReader!!.surface)
+            // apply current crop region so RAW capture matches preview zoom
+            currentCrop?.let { captureRequestBuilder.set(CaptureRequest.SCALER_CROP_REGION, it) }
             captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
             captureSession!!.capture(captureRequestBuilder.build(),
                 object : CameraCaptureSession.CaptureCallback() {
@@ -102,23 +107,37 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showCameraSelectionDialog() {
-        val cameraNames = cameraIds.map { id ->
+        val cameraNames = mutableListOf<String>()
+        val cameraIdList = mutableListOf<String>()
+        for (id in cameraIds) {
             val chars = cameraManager.getCameraCharacteristics(id)
             val lensFacing = chars.get(CameraCharacteristics.LENS_FACING)
             val capabilities = chars.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
-            when {
+            val focalLengths = chars.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+            val physicalSizes = chars.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+            val isTele = focalLengths != null && focalLengths.maxOrNull() != null && focalLengths.maxOrNull()!! > 6.0f
+            val name = when {
                 lensFacing == CameraCharacteristics.LENS_FACING_FRONT -> "Фронтальна"
+                isTele -> "Телеоб'єктив"
                 capabilities?.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR) == true -> "Телефото"
                 capabilities?.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA) == true -> "Основна/Широка"
                 else -> "Інша"
+            }
+            // Only add telephoto if detected
+            if (name == "Телеоб'єктив" || name == "Телефото") {
+                cameraNames.add(name)
+                cameraIdList.add(id)
+            } else if (name != "Телеоб'єктив" && name != "Телефото") {
+                cameraNames.add(name)
+                cameraIdList.add(id)
             }
         }
         val builder = android.app.AlertDialog.Builder(this)
         builder.setTitle("Виберіть камеру")
         builder.setItems(cameraNames.toTypedArray()) { _, which ->
-            currentCameraIndex = which
+            currentCameraIndex = cameraIds.indexOf(cameraIdList[which])
             closeCamera()
-            openCamera(cameraIds[which])
+            openCamera(cameraIdList[which])
         }
         builder.show()
     }
@@ -133,8 +152,9 @@ class MainActivity : ComponentActivity() {
         switchButton = findViewById(R.id.switchButton)
         selectCameraButton = findViewById(R.id.selectCameraButton)
 
-        cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        cameraIds = cameraManager.cameraIdList.toList()
+    cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+    cameraIds = cameraManager.cameraIdList.toList()
+    // Використовується тільки перша камера
 
         switchButton.setOnClickListener {
             switchCamera()
@@ -147,8 +167,8 @@ class MainActivity : ComponentActivity() {
         scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 val factor = detector.scaleFactor
-                currentZoom = (currentZoom * factor).coerceIn(1.0f, maxZoom)
-                applyZoom()
+                val newZoom = (currentZoom * factor).coerceIn(1.0f, maxZoom)
+                handleZoomSwitch(newZoom)
                 return true
             }
         })
@@ -165,14 +185,19 @@ class MainActivity : ComponentActivity() {
 
         zoomSeekBar = findViewById(R.id.zoomSeekBar)
         zoomText = findViewById(R.id.zoomText)
+        focusView = findViewById(R.id.focusView)
+        // style focusView: circular stroke
+        focusView?.background = android.graphics.drawable.ShapeDrawable(android.graphics.drawable.shapes.OvalShape()).apply {
+            paint.style = android.graphics.Paint.Style.STROKE
+            paint.strokeWidth = 6f
+            paint.color = android.graphics.Color.YELLOW
+        }
         zoomSeekBar?.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
                     val range = maxZoom - 1.0f
                     val z = 1.0f + (progress / 100.0f) * range
-                    currentZoom = z.coerceIn(1.0f, maxZoom)
-                    zoomText?.text = String.format("x%.2f", currentZoom)
-                    applyZoom()
+                    handleZoomSwitch(z.coerceIn(1.0f, maxZoom))
                 }
             }
 
@@ -245,6 +270,7 @@ class MainActivity : ComponentActivity() {
         openCamera(newCameraId)
     }
 
+    @SuppressLint("SuspiciousIndentation")
     private fun createCameraSession() {
         if (cameraDevice == null) return
 
@@ -345,6 +371,7 @@ class MainActivity : ComponentActivity() {
             val halfWidth = (rect.width() / (2 * zoomFactor)).toInt()
             val halfHeight = (rect.height() / (2 * zoomFactor)).toInt()
             val crop = AndroidRect(centerX - halfWidth, centerY - halfHeight, centerX + halfWidth, centerY + halfHeight)
+            currentCrop = crop
             previewRequestBuilder?.set(CaptureRequest.SCALER_CROP_REGION, crop)
             captureSession?.setRepeatingRequest(previewRequestBuilder!!.build(), null, null)
         } catch (e: Exception) {
@@ -360,17 +387,69 @@ class MainActivity : ComponentActivity() {
             val viewH = textureView.height
             val sensorX = (x.toFloat() / viewW * rect.width() + rect.left).toInt()
             val sensorY = (y.toFloat() / viewH * rect.height() + rect.top).toInt()
-            val half = 100
-            val meterRect = MeteringRectangle(Math.max(sensorX - half, rect.left), Math.max(sensorY - half, rect.top), half * 2, half * 2, MeteringRectangle.METERING_WEIGHT_MAX - 1)
+            val half = (Math.min(viewW, viewH) * 0.08).toInt().coerceAtLeast(50)
+            val left = (sensorX - half).coerceAtLeast(rect.left)
+            val top = (sensorY - half).coerceAtLeast(rect.top)
+            val right = (sensorX + half).coerceAtMost(rect.right)
+            val bottom = (sensorY + half).coerceAtMost(rect.bottom)
+            val meterRect = MeteringRectangle(left, top, right - left, bottom - top, MeteringRectangle.METERING_WEIGHT_MAX / 2)
 
-            previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(meterRect))
-            previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(meterRect))
+            val maxAf = characteristics.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AF) ?: 0
+            val maxAe = characteristics.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AE) ?: 0
+
+            // set regions if supported
+            if (maxAf > 0) previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(meterRect))
+            if (maxAe > 0) previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_REGIONS, arrayOf(meterRect))
+
+            // trigger AF
+            previewRequestBuilder?.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
             previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
             previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START)
-            captureSession?.capture(previewRequestBuilder!!.build(), object : CameraCaptureSession.CaptureCallback() {}, null)
-            // reset trigger
-            previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
-            captureSession?.setRepeatingRequest(previewRequestBuilder!!.build(), null, null)
+            captureSession?.capture(previewRequestBuilder!!.build(), object : CameraCaptureSession.CaptureCallback() {
+                override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+                    // after AF completes, reset to continuous AF for preview
+                    try {
+                        previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
+                        previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                        // clear regions after focusing to avoid permanent override
+                        if (maxAf > 0) previewRequestBuilder?.set(CaptureRequest.CONTROL_AF_REGIONS, null)
+                        if (maxAe > 0) previewRequestBuilder?.set(CaptureRequest.CONTROL_AE_REGIONS, null)
+                        session.setRepeatingRequest(previewRequestBuilder!!.build(), null, null)
+                        runOnUiThread { toast("Focus locked") }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }, null)
+            runOnUiThread {
+                toast("Focusing...")
+            }
+            // show focus indicator at tap (place relative to textureView)
+            runOnUiThread {
+                textureView.post {
+                    val texLoc = IntArray(2)
+                    textureView.getLocationOnScreen(texLoc)
+                    val parentView = textureView.parent as android.view.View
+                    val parentLoc = IntArray(2)
+                    parentView.getLocationOnScreen(parentLoc)
+                    val absoluteX = texLoc[0] + x
+                    val absoluteY = texLoc[1] + y
+                    val targetX = (absoluteX - parentLoc[0] - (focusView?.width ?: 0) / 2).toFloat()
+                    val targetY = (absoluteY - parentLoc[1] - (focusView?.height ?: 0) / 2).toFloat()
+                    focusView?.apply {
+                        bringToFront()
+                        this.x = targetX
+                        this.y = targetY
+                        visibility = android.view.View.VISIBLE
+                        alpha = 1f
+                        scaleX = 1f
+                        scaleY = 1f
+                        animate().scaleX(0.6f).scaleY(0.6f).alpha(0f).setDuration(800).withEndAction {
+                            visibility = android.view.View.GONE
+                        }.start()
+                    }
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -378,29 +457,28 @@ class MainActivity : ComponentActivity() {
 
     private fun saveDng(image: Image, result: CaptureResult) {
         try {
+            // Prepare filename without rotation
             val filename = "photo_${System.currentTimeMillis()}.dng"
-            // force orientation to 90 degrees (rotate right)
-            val orientationDegrees = 90
             val values = android.content.ContentValues().apply {
                 put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
                 put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/x-adobe-dng")
                 put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/DCIM")
-                put(android.provider.MediaStore.Images.ImageColumns.ORIENTATION, orientationDegrees)
+                // No rotation
+                put(android.provider.MediaStore.Images.ImageColumns.ORIENTATION, 0)
             }
             val resolver = applicationContext.contentResolver
             val uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-            if (uri != null) {
-                resolver.openOutputStream(uri)?.use { out ->
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                        DngCreator(characteristics, result).use { creator ->
-                            creator.writeImage(out, image)
-                        }
-                    }
-                }
-                toast("Saved RAW to gallery: $filename")
-            } else {
+            if (uri == null) {
                 toast("Error: Could not create MediaStore entry")
+                return
             }
+            resolver.openOutputStream(uri)?.use { out ->
+                // Write RAW DNG without rotation
+                DngCreator(characteristics, result).use { creator ->
+                    creator.writeImage(out, image)
+                }
+            }
+            toast("Saved RAW to gallery: $filename")
         } catch (e: Exception) {
             e.printStackTrace()
             toast("Error saving DNG: ${e.message}")
@@ -410,4 +488,12 @@ class MainActivity : ComponentActivity() {
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
+    // Зум — тільки цифровий
+    private fun handleZoomSwitch(newZoom: Float) {
+        currentZoom = newZoom
+        zoomText?.text = String.format("x%.2f", currentZoom)
+        applyZoom()
+    }
+
+    // Видалено фізичне перемикання
 }
