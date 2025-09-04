@@ -457,54 +457,28 @@ class MainActivity : ComponentActivity() {
 
     private fun saveDng(image: Image, result: CaptureResult) {
         try {
+            // Prepare filename without rotation
             val filename = "photo_${System.currentTimeMillis()}.dng"
-            val orientationDegrees = 90
             val values = android.content.ContentValues().apply {
                 put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
                 put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/x-adobe-dng")
                 put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/DCIM")
-                put(android.provider.MediaStore.Images.ImageColumns.ORIENTATION, orientationDegrees)
+                // No rotation
+                put(android.provider.MediaStore.Images.ImageColumns.ORIENTATION, 0)
             }
             val resolver = applicationContext.contentResolver
             val uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-            if (uri != null) {
-                resolver.openOutputStream(uri)?.use { out ->
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                        val crop = currentCrop
-                        if (crop != null && (crop.width() < image.width || crop.height() < image.height)) {
-                            // Convert RAW to grayscale Bitmap, crop, and save as JPEG
-                            val plane = image.planes[0]
-                            val buffer = plane.buffer
-                            val width = image.width
-                            val height = image.height
-                            val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
-                            // Fill bitmap with grayscale values from RAW buffer
-                            val rowStride = plane.rowStride
-                            val pixelStride = plane.pixelStride
-                            val rowBuffer = ByteArray(width * pixelStride)
-                            for (y in 0 until height) {
-                                val rowStart = y * rowStride
-                                buffer.position(rowStart)
-                                buffer.get(rowBuffer, 0, width * pixelStride)
-                                for (x in 0 until width) {
-                                    val v = rowBuffer[x * pixelStride].toInt() and 0xFF
-                                    bitmap.setPixel(x, y, android.graphics.Color.rgb(v, v, v))
-                                }
-                            }
-                            // Crop the bitmap
-                            val croppedBitmap = android.graphics.Bitmap.createBitmap(bitmap, crop.left, crop.top, crop.width(), crop.height())
-                            croppedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 98, out)
-                        } else {
-                            DngCreator(characteristics, result).use { creator ->
-                                creator.writeImage(out, image)
-                            }
-                        }
-                    }
-                }
-                toast("Saved RAW to gallery: $filename")
-            } else {
+            if (uri == null) {
                 toast("Error: Could not create MediaStore entry")
+                return
             }
+            resolver.openOutputStream(uri)?.use { out ->
+                // Write RAW DNG without rotation
+                DngCreator(characteristics, result).use { creator ->
+                    creator.writeImage(out, image)
+                }
+            }
+            toast("Saved RAW to gallery: $filename")
         } catch (e: Exception) {
             e.printStackTrace()
             toast("Error saving DNG: ${e.message}")
