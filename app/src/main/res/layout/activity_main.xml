@@ -1,13 +1,15 @@
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent">
-
-    <com.example.nocamera.AspectRatioTextureView
-        android:id="@+id/textureView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:layout_centerInParent="true" />
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#121212">
 
     <!-- Focus indicator -->
+    <com.example.nocamera.AspectRatioTextureView
+    android:id="@+id/textureView"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_centerInParent="true" />
+
     <View
         android:id="@+id/focusView"
         android:layout_width="80dp"
@@ -16,19 +18,22 @@
         android:visibility="gone" />
 
     <Button
-        android:id="@+id/switchButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_above="@+id/captureButton"
-        android:layout_alignParentStart="true"
-        android:layout_alignParentEnd="true"
-        android:layout_marginStart="131dp"
-        android:layout_marginLeft="16dp"
-        android:layout_marginTop="16dp"
-        android:layout_marginEnd="131dp"
-        android:layout_marginRight="16dp"
-        android:layout_marginBottom="5dp"
-        android:text="Switch Camera" />
+    android:id="@+id/switchButton"
+    android:layout_width="56dp"
+    android:layout_height="56dp"
+    android:layout_alignParentEnd="true"
+    android:layout_alignParentBottom="true"
+    android:layout_marginEnd="32dp"
+    android:layout_marginBottom="48dp"
+    android:background="@drawable/switch_button_bg_black"
+    android:elevation="8dp"
+    android:foreground="?android:attr/selectableItemBackground"
+    android:contentDescription="Switch Camera"
+    android:text=""
+    android:padding="0dp"
+    android:drawablePadding="0dp"
+        android:drawableTop="@drawable/ic_switch_camera_white_arrows" />
+        android:background="@drawable/switch_button_bg_black"
 
     <Button
         android:id="@+id/selectCameraButton"
@@ -37,48 +42,58 @@
         android:layout_above="@+id/switchButton"
         android:layout_alignParentStart="true"
         android:layout_alignParentEnd="true"
-        android:layout_marginStart="14dp"
+        android:layout_marginStart="29dp"
         android:layout_marginLeft="16dp"
         android:layout_marginTop="16dp"
-        android:layout_marginEnd="361dp"
+        android:layout_marginEnd="346dp"
         android:layout_marginRight="16dp"
-        android:layout_marginBottom="-148dp"
+        android:layout_marginBottom="-150dp"
         android:text="CC" />
 
     <Button
         android:id="@+id/captureButton"
-        android:layout_width="143dp"
+        android:layout_width="76dp"
         android:layout_height="76dp"
         android:layout_alignParentBottom="true"
         android:layout_centerHorizontal="true"
-        android:layout_marginStart="16dp"
-        android:layout_marginLeft="16dp"
-        android:layout_marginTop="16dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginRight="16dp"
-        android:layout_marginBottom="16dp"
-        android:text="Capture RAW" />
+        android:layout_marginBottom="40dp"
+        android:background="@drawable/capture_button_bg"
+        android:elevation="8dp"
+        android:text=""
+        android:contentDescription="Capture" />
 
     <SeekBar
         android:id="@+id/zoomSeekBar"
-        android:layout_width="match_parent"
+        android:layout_width="220dp"
         android:layout_height="wrap_content"
         android:layout_above="@+id/captureButton"
-        android:layout_marginStart="16dp"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="103dp"
+        android:layout_centerHorizontal="true"
+        android:layout_marginBottom="120dp"
         android:enabled="false"
         android:max="100"
-        android:progress="0" />
+        android:progress="0"
+    android:thumbTint="#FAFAFA"
+    android:progressTint="#FF9800"
+    android:backgroundTint="#222222" />
 
     <TextView
         android:id="@+id/zoomText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_above="@+id/zoomSeekBar"
-        android:layout_alignParentEnd="true"
-        android:layout_marginEnd="16dp"
-        android:layout_marginBottom="4dp"
+        android:layout_centerHorizontal="true"
+        android:layout_marginBottom="8dp"
         android:text="x1.0"
-        android:textColor="#FFFFFF" />
+    android:textColor="#FAFAFA"
+    android:textSize="20sp"
+    android:background="#222222"
+        android:padding="8dp"
+        android:alpha="0.65"
+        android:elevation="4dp" />
+    <!-- Напівпрозора панель керування -->
+    <LinearLayout
+        android:id="@+id/controlPanel"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:visibility="gone" />
 </RelativeLayout>

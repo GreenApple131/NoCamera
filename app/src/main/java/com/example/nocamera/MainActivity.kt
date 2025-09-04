@@ -107,23 +107,37 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showCameraSelectionDialog() {
-        val cameraNames = cameraIds.map { id ->
+        val cameraNames = mutableListOf<String>()
+        val cameraIdList = mutableListOf<String>()
+        for (id in cameraIds) {
             val chars = cameraManager.getCameraCharacteristics(id)
             val lensFacing = chars.get(CameraCharacteristics.LENS_FACING)
             val capabilities = chars.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)
-            when {
+            val focalLengths = chars.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)
+            val physicalSizes = chars.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE)
+            val isTele = focalLengths != null && focalLengths.maxOrNull() != null && focalLengths.maxOrNull()!! > 6.0f
+            val name = when {
                 lensFacing == CameraCharacteristics.LENS_FACING_FRONT -> "Фронтальна"
+                isTele -> "Телеоб'єктив"
                 capabilities?.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_ULTRA_HIGH_RESOLUTION_SENSOR) == true -> "Телефото"
                 capabilities?.contains(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA) == true -> "Основна/Широка"
                 else -> "Інша"
+            }
+            // Only add telephoto if detected
+            if (name == "Телеоб'єктив" || name == "Телефото") {
+                cameraNames.add(name)
+                cameraIdList.add(id)
+            } else if (name != "Телеоб'єктив" && name != "Телефото") {
+                cameraNames.add(name)
+                cameraIdList.add(id)
             }
         }
         val builder = android.app.AlertDialog.Builder(this)
         builder.setTitle("Виберіть камеру")
         builder.setItems(cameraNames.toTypedArray()) { _, which ->
-            currentCameraIndex = which
+            currentCameraIndex = cameraIds.indexOf(cameraIdList[which])
             closeCamera()
-            openCamera(cameraIds[which])
+            openCamera(cameraIdList[which])
         }
         builder.show()
     }
@@ -138,8 +152,9 @@ class MainActivity : ComponentActivity() {
         switchButton = findViewById(R.id.switchButton)
         selectCameraButton = findViewById(R.id.selectCameraButton)
 
-        cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        cameraIds = cameraManager.cameraIdList.toList()
+    cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+    cameraIds = cameraManager.cameraIdList.toList()
+    // Використовується тільки перша камера
 
         switchButton.setOnClickListener {
             switchCamera()
@@ -152,8 +167,8 @@ class MainActivity : ComponentActivity() {
         scaleGestureDetector = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 val factor = detector.scaleFactor
-                currentZoom = (currentZoom * factor).coerceIn(1.0f, maxZoom)
-                applyZoom()
+                val newZoom = (currentZoom * factor).coerceIn(1.0f, maxZoom)
+                handleZoomSwitch(newZoom)
                 return true
             }
         })
@@ -182,9 +197,7 @@ class MainActivity : ComponentActivity() {
                 if (fromUser) {
                     val range = maxZoom - 1.0f
                     val z = 1.0f + (progress / 100.0f) * range
-                    currentZoom = z.coerceIn(1.0f, maxZoom)
-                    zoomText?.text = String.format("x%.2f", currentZoom)
-                    applyZoom()
+                    handleZoomSwitch(z.coerceIn(1.0f, maxZoom))
                 }
             }
 
@@ -501,4 +514,12 @@ class MainActivity : ComponentActivity() {
     private fun toast(msg: String) {
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
+    // Зум — тільки цифровий
+    private fun handleZoomSwitch(newZoom: Float) {
+        currentZoom = newZoom
+        zoomText?.text = String.format("x%.2f", currentZoom)
+        applyZoom()
+    }
+
+    // Видалено фізичне перемикання
 }

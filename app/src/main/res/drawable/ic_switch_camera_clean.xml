@@ -1,0 +1,12 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Камера (білий силует) -->
+    <path android:fillColor="#FAFAFA" android:pathData="M7 7V5.5C7 4.67 7.67 4 8.5 4h7c0.83 0 1.5 0.67 1.5 1.5V7h2c0.55 0 1 0.45 1 1v9c0 0.55-0.45 1-1 1h-2v1.5c0 0.83-0.67 1.5-1.5 1.5h-7c-0.83 0-1.5-0.67-1.5-1.5V18H3c-0.55 0-1-0.45-1-1V8c0-0.55 0.45-1 1-1h2zM12 17c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5z"/>
+    <!-- Верхня стрілка -->
+    <path android:fillColor="#FF9800" android:fillAlpha="0.7" android:strokeWidth="0.5" android:pathData="M6.5,7.5c0-3.04 2.46-5.5 5.5-5.5 1.61 0 3.09 0.65 4.19 1.81l-1.1 1.1c-0.3 0.3-0.3 0.8 0 1.1 0.3 0.3 0.8 0.3 1.1 0l2.1-2.1c0.3-0.3 0.3-0.8 0-1.1l-2.1-2.1c-0.3-0.3-0.8-0.3-1.1 0-0.3 0.3-0.3 0.8 0 1.1l1.1 1.1C14.59 3.15 13.11 2.5 11.5 2.5c-4.14 0-7.5 3.36-7.5 7.5h2z"/>
+    <!-- Нижня стрілка -->
+    <path android:fillColor="#FF9800" android:fillAlpha="0.7" android:strokeWidth="0.5" android:pathData="M17.5,16.5c0 3.04-2.46 5.5-5.5 5.5-1.61 0-3.09-0.65-4.19-1.81l1.1-1.1c0.3-0.3 0.3-0.8 0-1.1-0.3-0.3-0.8-0.3-1.1 0l-2.1 2.1c-0.3 0.3-0.3 0.8 0 1.1l2.1 2.1c0.3 0.3 0.8 0.3 1.1 0 0.3-0.3 0.3-0.8 0-1.1l-1.1-1.1C9.41 20.85 10.89 21.5 12.5 21.5c4.14 0 7.5-3.36 7.5-7.5h-2z"/>
+</vector>
