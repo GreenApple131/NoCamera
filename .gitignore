@@ -1,0 +1,76 @@
+## Android/Gradle/IDE ignores
+
+# Gradle
+.gradle/
+/**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local configuration
+local.properties
+
+# Signing keys
+*.jks
+*.keystore
+key.properties
+
+# Android Studio
+.idea/
+*.iml
+.idea/**
+
+# Built application files
+*.apk
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+
+# Kotlin/Native
+.konan/
+
+# NDK
+.externalNativeBuild/
+.cxx/
+obj/
+
+# Android Studio Captures
+captures/
+
+# Misc
+.DS_Store
+*.log
+
+# IntelliJ
+*.ipr
+*.iws
+
+# OS files
+Thumbs.db
+ehthumbs.db
+
+# distribution
+release.keystore
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
