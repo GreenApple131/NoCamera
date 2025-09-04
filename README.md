@@ -1,6 +1,6 @@
 # NoCamera
 
-**NoCamera** is a simple Android application for capturing unprocessed RAW (DNG) images using the Camera2 API without rotation features to ensure stable saving.
+**NoCamera** is a lightweight Android app that captures pure RAW (DNG) images using the Camera2 API, with no added processing, filters, or AI. It’s designed for photography enthusiasts who prefer full control over their image editing.
 
 ## Overview
 
