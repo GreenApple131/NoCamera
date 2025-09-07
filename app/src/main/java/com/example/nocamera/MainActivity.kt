@@ -31,27 +31,108 @@ import androidx.core.app.ActivityCompat
 import android.graphics.Rect as AndroidRect
 
 class MainActivity : ComponentActivity() {
+    private var jpegReader: ImageReader? = null
+    private var deviceOrientation: Int = 0
 
-    private lateinit var textureView: AspectRatioTextureView
-    private lateinit var switchButton: Button
-    private lateinit var selectCameraButton: Button
+    private var lastPhotoTimestamp: Long = 0L
+        private var lastPhotoBaseName: String? = null
 
-    private lateinit var cameraManager: CameraManager
-    private lateinit var cameraIds: List<String>
-    private var currentCameraIndex = 0
-
-    private var cameraDevice: CameraDevice? = null
-    private var captureSession: CameraCaptureSession? = null
-    private var rawReader: ImageReader? = null
-    private var pendingRawImage: Image? = null
-    private val rawLock = Any()
-    private var previewRequestBuilder: CaptureRequest.Builder? = null
-
-    // Zoom
-    private var scaleGestureDetector: ScaleGestureDetector? = null
-    private var currentZoom = 1.0f
-    private var maxZoom = 1.0f
-    private var activeArraySize: AndroidRect? = null
+    private fun saveJpeg(image: Image) {
+        try {
+            if (lastPhotoTimestamp == 0L) {
+                lastPhotoTimestamp = System.currentTimeMillis()
+            }
+            val baseName = android.text.format.DateFormat.format("yyyyMMdd_HHmmss", lastPhotoTimestamp).toString()
+            val filename = "IMG_${baseName}.RAW-01.COVER.jpg"
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
+                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
+                put(android.provider.MediaStore.Images.ImageColumns.DATE_TAKEN, lastPhotoTimestamp)
+                put("group_id", lastPhotoTimestamp)
+            }
+            val resolver = applicationContext.contentResolver
+            val uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            if (uri == null) {
+                toast("Error: Could not create MediaStore entry for JPEG")
+                return
+            }
+            // Декодуємо JPEG у Bitmap
+            val buffer = image.planes[0].buffer
+            val bytes = ByteArray(buffer.remaining())
+            buffer.get(bytes)
+            val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            if (bitmap == null) {
+                toast("Error decoding JPEG bitmap")
+                return
+            }
+            // Визначаємо sensorOrientation та lensFacing
+            val sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+            val lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING) ?: CameraCharacteristics.LENS_FACING_BACK
+            var finalRotation = if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) {
+                var rot = (sensorOrientation + deviceOrientation) % 360
+            // Збереження JPEG тимчасово вимкнено
+            // try {
+            //     val baseName = lastPhotoBaseName ?: android.text.format.DateFormat.format("yyyyMMdd_HHmmss", System.currentTimeMillis()).toString()
+            //     val filename = "IMG_${baseName}.RAW-01.COVER.jpg"
+            //     val values = android.content.ContentValues().apply {
+            //         put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
+            //         put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            //         put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
+            //         put(android.provider.MediaStore.Images.ImageColumns.DATE_TAKEN, lastPhotoTimestamp)
+            //         put("group_id", lastPhotoTimestamp)
+            //     }
+            //     val resolver = applicationContext.contentResolver
+            //     val uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            //     if (uri == null) {
+            //         toast("Error: Could not create MediaStore entry for JPEG")
+            //         return
+            //     }
+            //     // Декодуємо JPEG у Bitmap
+            //     val buffer = image.planes[0].buffer
+            //     val bytes = ByteArray(buffer.remaining())
+            //     buffer.get(bytes)
+            //     val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            //     if (bitmap == null) {
+            //         toast("Error decoding JPEG bitmap")
+            //         return
+            //     }
+            //     // Визначаємо sensorOrientation та lensFacing
+            //     val sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+            //     val lensFacing = characteristics.get(CameraCharacteristics.LENS_FACING) ?: CameraCharacteristics.LENS_FACING_BACK
+            //     var finalRotation = if (lensFacing == CameraCharacteristics.LENS_FACING_FRONT) {
+            //         var rot = (sensorOrientation + deviceOrientation) % 360
+            //         rot = (360 - rot) % 360
+            //         rot
+            //     } else {
+            //         (sensorOrientation - deviceOrientation + 360) % 360
+            //     }
+            //     val matrix = android.graphics.Matrix()
+            //     matrix.postRotate(finalRotation.toFloat())
+            //     val rotatedBitmap = android.graphics.Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+            //     resolver.openOutputStream(uri)?.use { out ->
+            //         rotatedBitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 95, out)
+            //     }
+            //     // Додаємо EXIF Orientation та камеру
+            //     try {
+            //         val exif = androidx.exifinterface.media.ExifInterface(resolver.openInputStream(uri)!!)
+            //         // Orientation: 6 = Rotate 270 CW
+            //         exif.setAttribute(androidx.exifinterface.media.ExifInterface.TAG_ORIENTATION, "6")
+            //         exif.setAttribute(androidx.exifinterface.media.ExifInterface.TAG_MAKE, "Google")
+            //         exif.setAttribute(androidx.exifinterface.media.ExifInterface.TAG_MODEL, "Pixel 7 Pro")
+            //         exif.setAttribute(androidx.exifinterface.media.ExifInterface.TAG_SOFTWARE, "HDR+ 1.0.773153310zd")
+            //         exif.saveAttributes()
+            //     } catch (e: Exception) {
+            //         e.printStackTrace()
+            //     }
+            //     val scanIntent = android.content.Intent(android.content.Intent.ACTION_MEDIA_SCANNER_SCAN_FILE)
+            //     scanIntent.data = uri
+            //     sendBroadcast(scanIntent)
+            //     toast("Saved JPEG to gallery: $filename (rotation: $finalRotation)")
+            // } catch (e: Exception) {
+            //     e.printStackTrace()
+            //     toast("Error saving JPEG: ${e.message}")
+            // }
     private var currentCrop: AndroidRect? = null
 
     private lateinit var characteristics: CameraCharacteristics
@@ -72,9 +153,11 @@ class MainActivity : ComponentActivity() {
         try {
             val captureRequestBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
             captureRequestBuilder.addTarget(rawReader!!.surface)
-            // apply current crop region so RAW capture matches preview zoom
+            jpegReader?.surface?.let { captureRequestBuilder.addTarget(it) }
             currentCrop?.let { captureRequestBuilder.set(CaptureRequest.SCALER_CROP_REGION, it) }
             captureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
+            // Встановлюємо орієнтацію для JPEG
+            captureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION, 0) // Можна замінити на deviceOrientation, якщо є
             captureSession!!.capture(captureRequestBuilder.build(),
                 object : CameraCaptureSession.CaptureCallback() {
                     override fun onCaptureCompleted(
@@ -83,13 +166,15 @@ class MainActivity : ComponentActivity() {
                         result: TotalCaptureResult
                     ) {
                         super.onCaptureCompleted(session, request, result)
-                        // Pair capture result with any pending image (handle race in either order)
                         synchronized(rawLock) {
                             if (pendingRawImage != null) {
                                 val img = pendingRawImage
                                 pendingRawImage = null
                                 img?.use {
                                     saveDng(it, result)
+                            // Generate baseName once per capture
+                            lastPhotoTimestamp = System.currentTimeMillis()
+                            lastPhotoBaseName = android.text.format.DateFormat.format("yyyyMMdd_HHmmss", lastPhotoTimestamp).toString()
                                 }
                             } else {
                                 lastCaptureResult = result
@@ -144,6 +229,20 @@ class MainActivity : ComponentActivity() {
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Orientation listener
+        val orientationListener = object : android.view.OrientationEventListener(this) {
+            override fun onOrientationChanged(orientation: Int) {
+                deviceOrientation = when {
+                    orientation in 45..134 -> 270
+                    orientation in 135..224 -> 180
+                    orientation in 225..314 -> 90
+                    else -> 0
+                }
+            }
+        }
+        if (orientationListener.canDetectOrientation()) {
+            orientationListener.enable()
+        }
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -279,6 +378,7 @@ class MainActivity : ComponentActivity() {
         val rawSize = rawSizes?.maxByOrNull { it.width * it.height } ?: Size(1920, 1080)
 
         rawReader?.close()
+        jpegReader?.close()
         if (rawSizes != null && rawSizes.isNotEmpty()) {
             rawReader = ImageReader.newInstance(rawSize.width, rawSize.height, ImageFormat.RAW_SENSOR, 2)
             rawReader?.setOnImageAvailableListener({ reader ->
@@ -287,7 +387,6 @@ class MainActivity : ComponentActivity() {
                     toast("ImageReader: RAW image is null")
                     return@setOnImageAvailableListener
                 }
-                // Try to pair image with capture result; if not available, buffer image
                 synchronized(rawLock) {
                     if (lastCaptureResult != null) {
                         val result = lastCaptureResult
@@ -296,14 +395,27 @@ class MainActivity : ComponentActivity() {
                             saveDng(it, result!!)
                         }
                     } else {
-                        // buffer image until capture result arrives
                         pendingRawImage?.close()
                         pendingRawImage = image
                     }
                 }
             }, null)
+
+            // JPEG ImageReader
+            jpegReader = ImageReader.newInstance(rawSize.width, rawSize.height, ImageFormat.JPEG, 2)
+            jpegReader?.setOnImageAvailableListener({ reader ->
+                val image = reader.acquireLatestImage()
+                if (image == null) {
+                    toast("ImageReader: JPEG image is null")
+                    return@setOnImageAvailableListener
+                }
+                image.use {
+                    saveJpeg(it)
+                }
+            }, null)
         } else {
             rawReader = null
+            jpegReader = null
         }
 
     val texture = textureView.surfaceTexture ?: return
@@ -336,7 +448,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            val outputs = if (rawReader != null) listOf(previewSurface, rawReader!!.surface) else listOf(previewSurface)
+            val outputs = if (rawReader != null && jpegReader != null) listOf(previewSurface, rawReader!!.surface, jpegReader!!.surface) else listOf(previewSurface)
 
             cameraDevice!!.createCaptureSession(
                 outputs,
@@ -457,14 +569,18 @@ class MainActivity : ComponentActivity() {
 
     private fun saveDng(image: Image, result: CaptureResult) {
         try {
-            // Prepare filename without rotation
-            val filename = "photo_${System.currentTimeMillis()}.dng"
+            if (lastPhotoTimestamp == 0L) {
+                lastPhotoTimestamp = System.currentTimeMillis()
+            }
+            val baseName = android.text.format.DateFormat.format("yyyyMMdd_HHmmss", lastPhotoTimestamp).toString()
+            val filename = "IMG_${baseName}.RAW-02.ORIGINAL.dng"
             val values = android.content.ContentValues().apply {
                 put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, filename)
                 put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/x-adobe-dng")
-                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/DCIM")
-                // No rotation
+                put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "DCIM/Camera")
                 put(android.provider.MediaStore.Images.ImageColumns.ORIENTATION, 0)
+                put(android.provider.MediaStore.Images.ImageColumns.DATE_TAKEN, lastPhotoTimestamp)
+                put("group_id", lastPhotoTimestamp)
             }
             val resolver = applicationContext.contentResolver
             val uri = resolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
@@ -473,12 +589,15 @@ class MainActivity : ComponentActivity() {
                 return
             }
             resolver.openOutputStream(uri)?.use { out ->
-                // Write RAW DNG without rotation
-                DngCreator(characteristics, result).use { creator ->
-                    creator.writeImage(out, image)
-                }
+                val creator = DngCreator(characteristics, result)
+                // Orientation: 6 = Rotate 270 CW
+                creator.setOrientation(6)
+                creator.writeImage(out, image)
+                creator.close()
             }
+                        // ...existing code...
             toast("Saved RAW to gallery: $filename")
+            lastPhotoTimestamp = 0L // Скидаємо після збереження пари
         } catch (e: Exception) {
             e.printStackTrace()
             toast("Error saving DNG: ${e.message}")
